@@ -96,6 +96,97 @@
   loop_control:
     label: '{{ item.path }}'
 
+- name: "Slurp existing App Config"
+  ansible.builtin.slurp:
+    src: '{{ gitea_etc }}/app.ini'
+  register: _gitea_existing_ini
+  failed_when: false
+  no_log: true
+
+- name: "Extract existing secrets from App Config"
+  vars:
+    _ini: '{{ _gitea_existing_ini.content | default("") | b64decode }}'
+  ansible.builtin.set_fact:
+    _gitea_secret_key: >-
+      {{ (_ini | regex_search('SECRET_KEY\s*=\s*(\S+)', '\1') or ['']) | first }}
+    _gitea_internal_token: >-
+      {{ (_ini | regex_search('INTERNAL_TOKEN\s*=\s*(\S+)', '\1') or ['']) | first }}
+    _gitea_jwt_secret: >-
+      {{ (_ini | regex_search('(?m)^JWT_SECRET\s*=\s*(\S+)', '\1') or ['']) | first }}
+  no_log: true
+
+- name: "Generate SECRET_KEY"
+  when:
+    - "'SECRET_KEY' not in (gitea_app_ini.security | default({}))"
+    - _gitea_secret_key == ''
+  ansible.builtin.command:
+    argv:
+      - '{{ gitea_opt }}/{{ gitea_name }}'
+      - generate
+      - secret
+      - SECRET_KEY
+  register: _gitea_gen_secret_key
+  changed_when: false
+  no_log: true
+
+- name: "Generate INTERNAL_TOKEN"
+  when:
+    - "'INTERNAL_TOKEN' not in (gitea_app_ini.security | default({}))"
+    - _gitea_internal_token == ''
+  ansible.builtin.command:
+    argv:
+      - '{{ gitea_opt }}/{{ gitea_name }}'
+      - generate
+      - secret
+      - INTERNAL_TOKEN
+  register: _gitea_gen_internal_token
+  changed_when: false
+  no_log: true
+
+- name: "Generate JWT_SECRET"
+  when:
+    - "'JWT_SECRET' not in (gitea_app_ini.oauth2 | default({}))"
+    - _gitea_jwt_secret == ''
+  ansible.builtin.command:
+    argv:
+      - '{{ gitea_opt }}/{{ gitea_name }}'
+      - generate
+      - secret
+      - JWT_SECRET
+  register: _gitea_gen_jwt_secret
+  changed_when: false
+  no_log: true
+
+- name: "Merge generated secrets into App Config"
+  vars:
+    _secret_key: >-
+      {{ gitea_app_ini.security.SECRET_KEY | default(
+           _gitea_secret_key if _gitea_secret_key != ''
+           else ((_gitea_gen_secret_key | default({})).stdout | default('') | trim)
+         ) }}
+    _internal_token: >-
+      {{ gitea_app_ini.security.INTERNAL_TOKEN | default(
+           _gitea_internal_token if _gitea_internal_token != ''
+           else ((_gitea_gen_internal_token | default({})).stdout | default('') | trim)
+         ) }}
+    _jwt_secret: >-
+      {{ gitea_app_ini.oauth2.JWT_SECRET | default(
+           _gitea_jwt_secret if _gitea_jwt_secret != ''
+           else ((_gitea_gen_jwt_secret | default({})).stdout | default('') | trim)
+         ) }}
+  ansible.builtin.set_fact:
+    gitea_app_ini: >-
+      {{ gitea_app_ini | combine({
+           'security': (gitea_app_ini.security | default({})) | combine({
+             'SECRET_KEY': _secret_key,
+             'INTERNAL_TOKEN': _internal_token
+           }),
+           'oauth2': (gitea_app_ini.oauth2 | default({})) | combine({
+             'JWT_SECRET': _jwt_secret
+           })
+         }) }}
+  no_log: true
+
 - name: "Template App Config"
   notify: gitea_restart
   ansible.builtin.template:
