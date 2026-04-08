@@ -1,0 +1,45 @@
+#SPDX-License-Identifier: GPL-3.0-only
+---
+- name: Verify
+  hosts: all
+  tasks:
+    - name: Check gitea symlink
+      ansible.builtin.stat:
+        path: /opt/gitea/gitea
+      register: gitea_symlink
+
+    - name: Assert gitea symlink points at a versioned binary
+      ansible.builtin.assert:
+        that:
+          - gitea_symlink.stat.exists
+          - gitea_symlink.stat.islnk
+          - gitea_symlink.stat.lnk_source is match('/opt/gitea/gitea-.*-linux-.*')
+
+    - name: Check gitea versioned binary
+      ansible.builtin.stat:
+        path: '{{ gitea_symlink.stat.lnk_source }}'
+      register: gitea_binary
+
+    - name: Assert gitea binary is executable
+      ansible.builtin.assert:
+        that:
+          - gitea_binary.stat.exists
+          - gitea_binary.stat.executable
+
+    - name: Check app.ini exists
+      ansible.builtin.stat:
+        path: /etc/gitea/app.ini
+      register: gitea_ini
+
+    - name: Assert app.ini exists
+      ansible.builtin.assert:
+        that:
+          - gitea_ini.stat.exists
+
+    - name: Gather service facts
+      ansible.builtin.service_facts:
+
+    - name: Assert gitea service is present
+      ansible.builtin.assert:
+        that:
+          - "'gitea.service' in ansible_facts.services"

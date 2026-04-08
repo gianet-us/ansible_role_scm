@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: GPL-3.0-only
+[Unit]
+Description=Gitea (Git with a cup of tea)
+After=network-online.target
+Wants=network-online.target
+AssertFileIsExecutable={{ gitea_opt }}/{{ gitea_name }}
+AssertPathExists={{ gitea_etc }}/app.ini
+
+[Service]
+RestartSec=2s
+Type=simple
+User={{ gitea_user }}
+Group={{ gitea_group }}
+WorkingDirectory={{ gitea_home }}
+ExecStart={{ gitea_opt }}/{{ gitea_name }} web --config {{ gitea_etc }}/app.ini
+Restart=always
+Environment=USER={{ gitea_user }} HOME={{ gitea_user_home }} GITEA_WORK_DIR={{ gitea_home }}
+# Uncomment to bind ports < 1024 without running as root
+#CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+#AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

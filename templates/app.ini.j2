@@ -1,0 +1,14 @@
+; {{ ansible_managed }}
+; SPDX-License-Identifier: GPL-3.0-only
+{% if 'DEFAULT' in gitea_app_ini %}
+{% for key, value in gitea_app_ini['DEFAULT'].items() %}
+{{ key }} = {{ value }}
+{% endfor %}
+{% endif %}
+{% for section, entries in gitea_app_ini.items() if section != 'DEFAULT' %}
+
+[{{ section }}]
+{% for key, value in entries.items() %}
+{{ key }} = {{ value }}
+{% endfor %}
+{% endfor %}

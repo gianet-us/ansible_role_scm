@@ -1,0 +1,66 @@
+#SPDX-License-Identifier: GPL-3.0-only
+---
+
+## Install configuration
+gitea_name: 'gitea'
+gitea_version: '1.25.5'
+gitea_arch: 'amd64'
+gitea_opt: '/opt/{{ gitea_name }}'
+gitea_etc: '/etc/{{ gitea_name }}'
+gitea_home: '/var/lib/{{ gitea_name }}'
+gitea_url: 'https://github.com/go-gitea/gitea/releases/download/v{{ gitea_version }}/gitea-{{ gitea_version }}-linux-{{ gitea_arch }}'
+
+## Keep the current + N previous versioned binaries on disk for quick rollback.
+## The active symlink target and the just-installed version are always preserved.
+gitea_keep_versions: 1
+
+## Service user / group
+## Set gitea_user_create: false if the user is provisioned by another role.
+gitea_user_create: true
+gitea_user: 'git'
+gitea_group: 'git'
+gitea_uid: ~
+gitea_gid: ~
+gitea_user_home: '/home/{{ gitea_user }}'
+## Gitea's built-in SSH server (DISABLE_SSH = false) requires a real login shell
+## so OpenSSH can exec `gitea serv`. Default to /bin/bash; override to /bin/false
+## if you do not expose SSH git operations.
+gitea_user_shell: '/bin/bash'
+
+## app.ini contents — fully templated from this dict.
+## The special 'DEFAULT' key is rendered at the top of app.ini without a section
+## header (matching Gitea's convention). All other keys are rendered as
+## [section-name] preserving dots in section names (e.g. 'cron.update_checker').
+## Override this dict in your playbook to inject every setting you need.
+gitea_app_ini:
+  DEFAULT:
+    APP_NAME: 'Gitea: Git with a cup of tea'
+    RUN_USER: '{{ gitea_user }}'
+    WORK_PATH: '{{ gitea_home }}'
+    RUN_MODE: 'prod'
+  server:
+    PROTOCOL: 'http'
+    DOMAIN: 'localhost'
+    HTTP_PORT: 3000
+    ROOT_URL: 'http://localhost:3000/'
+    APP_DATA_PATH: '{{ gitea_home }}/data'
+    DISABLE_SSH: false
+    SSH_PORT: 22
+  database:
+    DB_TYPE: 'sqlite3'
+    PATH: '{{ gitea_home }}/data/gitea.db'
+  repository:
+    ROOT: '{{ gitea_home }}/data/gitea-repositories'
+  session:
+    PROVIDER: 'file'
+  log:
+    MODE: 'console'
+    LEVEL: 'info'
+    ROOT_PATH: '{{ gitea_home }}/log'
+  security:
+    INSTALL_LOCK: true
+  service:
+    DISABLE_REGISTRATION: true
+  openid:
+    ENABLE_OPENID_SIGNIN: false
+    ENABLE_OPENID_SIGNUP: false

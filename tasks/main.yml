@@ -1,0 +1,129 @@
+#SPDX-License-Identifier: GPL-3.0-only
+---
+- name: "Create Gitea System Group"
+  when: gitea_user_create
+  ansible.builtin.group:
+    name: '{{ gitea_group }}'
+    gid: '{{ gitea_gid | default(omit, true) }}'
+    system: true
+
+- name: "Create Gitea System User"
+  when: gitea_user_create
+  ansible.builtin.user:
+    name: '{{ gitea_user }}'
+    group: '{{ gitea_group }}'
+    uid: '{{ gitea_uid | default(omit, true) }}'
+    home: '{{ gitea_user_home }}'
+    shell: '{{ gitea_user_shell }}'
+    system: true
+    create_home: true
+
+- name: "Create Install Folder"
+  ansible.builtin.file:
+    path: '{{ gitea_opt }}'
+    state: directory
+    owner: '{{ gitea_user }}'
+    group: '{{ gitea_group }}'
+    mode: '0755'
+
+- name: "Create Config Folder"
+  ansible.builtin.file:
+    path: '{{ gitea_etc }}'
+    state: directory
+    owner: '{{ gitea_user }}'
+    group: '{{ gitea_group }}'
+    mode: '0750'
+
+- name: "Create Data Folders"
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: '{{ gitea_user }}'
+    group: '{{ gitea_group }}'
+    mode: '0750'
+  loop:
+    - '{{ gitea_home }}'
+    - '{{ gitea_home }}/custom'
+    - '{{ gitea_home }}/data'
+    - '{{ gitea_home }}/log'
+
+- name: "Download Versioned Binary"
+  register: download_version
+  ansible.builtin.get_url:
+    url: '{{ gitea_url }}'
+    dest: '{{ gitea_opt }}/gitea-{{ gitea_version }}-linux-{{ gitea_arch }}'
+    checksum: 'sha256:{{ gitea_url }}.sha256'
+    owner: '{{ gitea_user }}'
+    group: '{{ gitea_group }}'
+    mode: '0755'
+
+- name: "Symlink Active Binary"
+  register: gitea_symlink
+  notify: gitea_restart
+  ansible.builtin.file:
+    src: '{{ gitea_opt }}/gitea-{{ gitea_version }}-linux-{{ gitea_arch }}'
+    dest: '{{ gitea_opt }}/{{ gitea_name }}'
+    state: link
+    owner: '{{ gitea_user }}'
+    group: '{{ gitea_group }}'
+    follow: false
+
+- name: "List Installed Versioned Binaries"
+  ansible.builtin.find:
+    paths: '{{ gitea_opt }}'
+    patterns: 'gitea-*-linux-{{ gitea_arch }}'
+    file_type: file
+    recurse: false
+  register: gitea_installed_binaries
+
+- name: "Compute Versioned Binaries To Prune"
+  ansible.builtin.set_fact:
+    gitea_binaries_to_prune: >-
+      {{
+        (
+          gitea_installed_binaries.files
+          | sort(attribute='mtime', reverse=true)
+          | rejectattr('path', 'equalto', gitea_opt ~ '/gitea-' ~ gitea_version ~ '-linux-' ~ gitea_arch)
+          | list
+        )[gitea_keep_versions:]
+      }}
+
+- name: "Prune Old Versioned Binaries"
+  ansible.builtin.file:
+    path: '{{ item.path }}'
+    state: absent
+  loop: '{{ gitea_binaries_to_prune }}'
+  loop_control:
+    label: '{{ item.path }}'
+
+- name: "Template App Config"
+  notify: gitea_restart
+  ansible.builtin.template:
+    src: '../templates/app.ini.j2'
+    dest: '{{ gitea_etc }}/app.ini'
+    owner: '{{ gitea_user }}'
+    group: '{{ gitea_group }}'
+    mode: '0640'
+    backup: false
+
+- name: "Template Gitea Service"
+  register: template_gitea_service
+  ansible.builtin.template:
+    src: '../templates/gitea-service.j2'
+    dest: '{{ systemd_conf }}/{{ gitea_name }}.service'
+    owner: 'root'
+    group: 'root'
+    mode: '0644'
+    backup: false
+
+- name: "Enable Gitea Service"
+  when: template_gitea_service.changed
+  ansible.builtin.systemd:
+    name: '{{ gitea_name }}.service'
+    daemon_reload: true
+    enabled: true
+
+- name: "Start Gitea Service"
+  ansible.builtin.systemd:
+    name: '{{ gitea_name }}.service'
+    state: started

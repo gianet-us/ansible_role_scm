@@ -1,0 +1,6 @@
+#SPDX-License-Identifier: GPL-3.0-only
+---
+- name: gitea_restart
+  ansible.builtin.systemd:
+    name: '{{ gitea_name }}.service'
+    state: restarted

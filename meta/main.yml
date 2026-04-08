@@ -1,0 +1,22 @@
+galaxy_info:
+  role_name: "ansible_role_scm"
+  namespace: "gianet"
+  author: "Luciano Giacchetta"
+  description: "Software Code Management Role (Gitea)"
+  company: "Giacchetta Networks LLC"
+  issue_tracker_url: "https://gianet.us/engineering/ansible_role_scm/issues"
+  license: "GPL-3.0-only"
+  min_ansible_version: "2.12"
+  platforms:
+    - name: "Debian"
+      versions:
+        - "all"
+    - name: "Ubuntu"
+      versions:
+        - "all"
+  galaxy_tags:
+    - "scm"
+    - "git"
+    - "gitea"
+
+dependencies: []
