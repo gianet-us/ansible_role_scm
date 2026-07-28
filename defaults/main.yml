@@ -3,7 +3,7 @@
 
 ## Install configuration
 gitea_name: 'gitea'
-gitea_version: '1.27.0'
+gitea_version: '1.27.1'
 gitea_arch: 'amd64'
 gitea_opt: '/opt/{{ gitea_name }}'
 gitea_etc: '/etc/{{ gitea_name }}'
