@@ -6,6 +6,11 @@ on:
   schedule:
     - cron: '0 6 * * *'  # Every day at 06:00 UTC
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Specific Gitea version to test and tag (e.g. 28.1.0). Leave empty to use latest."
+        required: false
+        default: ''
   pull_request:
     branches:
       - main
@@ -23,88 +28,14 @@ jobs:
           path: ansible_role_scm
           fetch-depth: 0
 
-      - name: Sync to branch tip
-        if: github.event_name != 'pull_request'
-        working-directory: ansible_role_scm
-        run: |
-          # Scheduled runs can check out a stale commit: Gitea keeps the sha that
-          # registered the cron and a '[skip ci]' push never refreshes it, which
-          # left this checkout 8 days behind main. Reset to the real tip so the
-          # version check, Molecule and the push all agree with the branch.
-          git fetch origin "${GITHUB_REF_NAME:-main}"
-          git reset --hard FETCH_HEAD
-
-      - name: Check versions
-        id: check
-        working-directory: ansible_role_scm
-        run: |
-          LATEST=$(curl -sf https://api.github.com/repos/go-gitea/gitea/releases/latest | jq -r '.tag_name' | sed 's/^v//')
-          if ! [[ "$LATEST" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Refusing to bump to non-stable version '$LATEST'"
-            exit 1
-          fi
-          CURRENT=$(grep "^gitea_version:" defaults/main.yml | sed "s/gitea_version: '//;s/'//")
-          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
-          if [ "$LATEST" = "$CURRENT" ]; then
-            echo "needs_update=false" >> "$GITHUB_OUTPUT"
-            echo "Already on latest: $CURRENT"
-          else
-            echo "needs_update=true" >> "$GITHUB_OUTPUT"
-            echo "Update available: $CURRENT -> $LATEST"
-          fi
-
-      - name: Install Molecule
-        if: steps.check.outputs.needs_update == 'true'
-        run: pip install ansible molecule molecule-plugins[podman]
-
-      - name: Install Ansible collections
-        if: steps.check.outputs.needs_update == 'true'
-        run: ansible-galaxy collection install containers.podman
-
-      - name: Update gitea_version
-        if: steps.check.outputs.needs_update == 'true'
-        working-directory: ansible_role_scm
-        run: |
-          sed -i "s/^gitea_version: '.*'$/gitea_version: '${{ steps.check.outputs.latest }}'/" defaults/main.yml
-          UPDATED=$(grep "^gitea_version:" defaults/main.yml | sed "s/gitea_version: '//;s/'//")
-          if [ "$UPDATED" != "${{ steps.check.outputs.latest }}" ]; then
-            echo "::error::Failed to update gitea_version (expected '${{ steps.check.outputs.latest }}', got '$UPDATED')"
-            exit 1
-          fi
-          echo "Verified: gitea_version updated to $UPDATED"
-
-      - name: Run Molecule tests
-        if: steps.check.outputs.needs_update == 'true'
-        working-directory: ansible_role_scm
-        run: molecule test
-
-      - name: Commit and push
-        if: steps.check.outputs.needs_update == 'true' && github.ref == 'refs/heads/main'
-        working-directory: ansible_role_scm
-        env:
-          VERSION: ${{ steps.check.outputs.latest }}
-        run: |
-          set -euo pipefail
-          git config user.name "giabot"
-          git config user.email "bot@mail.gianet.us"
-          git remote set-url origin "https://giabot:${{ secrets.GITEA_TOKEN }}@gianet.us/engineering/ansible_role_scm.git"
-          git add defaults/main.yml
-          git commit -m "patch: update gitea_version to $VERSION"
-
-          # needs_update means main did not carry $VERSION, so a remote tag of
-          # that name can only be debris from a run that died mid-push. Move it
-          # rather than letting the whole step fail, as 28.0.0 did for 3 days.
-          EXISTING=$(git ls-remote --tags origin "refs/tags/$VERSION" | cut -f1)
-          if [ -n "$EXISTING" ]; then
-            echo "::warning::Tag $VERSION already exists at $EXISTING but main did not carry $VERSION; re-pointing it at this commit"
-          fi
-          git tag -f "$VERSION"
-          git tag -f latest
-
-          # --atomic: main, $VERSION and latest land together or not at all. The
-          # old non-atomic push let the tag succeed while main was rejected,
-          # stranding 28.0.0 on an orphan commit and leaving latest behind.
-          git push --atomic origin main "+refs/tags/$VERSION" "+refs/tags/latest"
+      - name: Bump version
+        uses: https://gianet.us/engineering/infra-actions/bump-version@v1
+        with:
+          repo-path: ansible_role_scm
+          var-name: gitea_version
+          upstream-repo: go-gitea/gitea
+          version: ${{ inputs.version }}
+          token: ${{ secrets.GITEA_TOKEN }}
 
       - name: Notify on failure
         if: failure()
