@@ -4,7 +4,8 @@ name: Update Gitea Version
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # Every day at 06:00 UTC
+    - cron: '@daily'  # Midnight UTC; only one runner serves this instance (capacity 1),
+                       # so same-instant daily bumpers across repos just queue, not race.
   workflow_dispatch:
     inputs:
       version:
